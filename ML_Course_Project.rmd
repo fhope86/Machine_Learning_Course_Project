@@ -1,0 +1,131 @@
+---
+title: "Machine Learning - Excercise Analysis"
+author: "Mike"
+date: "1/19/2022"
+output:
+  pdf_document: default
+  html_document: default
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+## Executive Summary
+
+BACKGROUND
+
+Using devices such as Jawbone Up, Nike FuelBand, and Fitbit it is now possible to collect a large amount of data about personal activity relatively inexpensively. These type of devices are part of the quantified self movement – a group of enthusiasts who take measurements about themselves regularly to improve their health, to find patterns in their behavior, or because they are tech geeks. One thing that people regularly do is quantify how much of a particular activity they do, but they rarely quantify how well they do it. In this project, your goal will be to use data from accelerometers on the belt, forearm, arm, and dumbell of 6 participants. They were asked to perform barbell lifts correctly and incorrectly in 5 different ways. More information is available from the website here: http://groupware.les.inf.puc-rio.br/har (see the section on the Weight Lifting Exercise Dataset).
+
+DATA
+
+The training data for this project are available here: 
+https://d396qusza40orc.cloudfront.net/predmachlearn/pml-training.csv
+
+The test data are available here:
+https://d396qusza40orc.cloudfront.net/predmachlearn/pml-testing.csv
+
+The data for this project come from this source: http://groupware.les.inf.puc-rio.br/har.
+
+## Load data
+```{r}
+# load data files from working directory ('data' for web lab)
+library(readr)
+x_test<-read.table("pml-testing.csv", header=TRUE, sep=",", na.strings=c("NA","","#DIV/0!"))
+x_train<-read.table("pml-training.csv", header=TRUE, sep=",", na.strings=c("NA","","#DIV/0!"))
+```
+
+## Review and clean data
+```{r}
+# remove variables with significant NA's
+# remove 'new_window' variable with only 1 factor level in training set
+# remove colums (2 & 5) as non-numeric variables
+testdata<-x_test[,colSums(is.na(x_test))==0]
+traindata<-x_train[,colSums(is.na(x_train))==0]
+testdata<-subset(testdata, select=-c(X,raw_timestamp_part_1,raw_timestamp_part_2,num_window,new_window,user_name,cvtd_timestamp,problem_id))
+traindata<-subset(traindata, select=-c(X,raw_timestamp_part_1,raw_timestamp_part_2,num_window,new_window,user_name,cvtd_timestamp))
+
+# Identifying variables that will not be good predictors
+library(caret)
+nsv<-nearZeroVar(traindata,saveMetrics=TRUE)
+nsv
+```
+
+CROSS VALIDATION and DATA PARTITIONING
+
+```{r}
+# Using 'caret' package; partitioning training data into trainbuild and traintest data sets
+library(caret)
+library(kernlab)
+traindata$classe<-as.factor(traindata$classe)
+inTrain <- createDataPartition(y=traindata$classe, p=0.75, list=FALSE)
+trainbuild<-traindata[inTrain,]
+traintest<-traindata[-inTrain,]
+dim(trainbuild)
+dim(traintest)
+```
+
+BUILD & EVALUATE DECISION TREE MODELS
+
+1) RPART Classification Tree
+```{r}
+# build the model with 'rpart'...one of R's regression/classification tree functions
+# library(caret)
+library(rpart)
+library(rpart.plot)
+set.seed(32343)
+modelRPART<-train(classe ~., method="rpart",data=trainbuild)
+finModRPART<-modelRPART$finalModel
+print(finModRPART)
+# plot the classification tree
+plot(modelRPART$finalModel,uniform=TRUE, main="Classification Tree")
+text(modelRPART$finalModel,use.n=TRUE,all=TRUE,cex=0.8)
+```
+
+Estimate the performance of the RPART model on the traintest data
+```{r}
+set.seed(32343)
+predictRPART <- predict(finModRPART, traintest, type = "class")
+confusionMatrix(factor(traintest$classe), predictRPART)
+```
+
+Accuracy of RPART Classification model is:  49.2%
+Expected out-sample-error is:  50.8%
+----------------------------------------------------
+
+2) Random Forest Classification Tree
+
+```{r}
+# Fit a Random Forest Model to the trainbuild data
+# uses resampling with 5-fold cross-validation
+library(randomForest)
+set.seed(333)
+modelRF <- train(classe ~ ., data = trainbuild, method = "rf", trControl = trainControl(method = "cv", 5), ntree = 20)
+
+modelRF
+finModRF<-modelRF$finalModel
+print(finModRF)
+```
+Random Forest OOB estimate of error rate is: 1.45%
+
+Therefore, we test the Random Forest prediction model on the traintest data
+
+```{r}
+predictRF <- predict(finModRF, traintest, type="class")
+confusionMatrix(traintest$classe, predictRF)
+```
+
+Accuracy of Random Forest Classification model is:  99.0%
+Expected out-of-sample error is: 1.0%
+
+Make final prediction with RF model on testdata
+```{r}
+predictRFfinal <- predict(finModRF, testdata, type="class")
+predictRFfinal
+```
+
+Evaluate the 'importance' of each variable on the model
+```{r}
+importance(finModRF)
+```
+
+
